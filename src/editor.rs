@@ -132,7 +132,7 @@ impl Editor {
                         editor.move_cursor(Key::Left);
                     }
                     editor.highlighted_word = Some(query.to_string());
-                    },
+                },
             )
             .unwrap_or(None);
 
@@ -159,8 +159,11 @@ impl Editor {
             Key::Ctrl('s') => self.save(),
             Key::Ctrl('f') => self.search(),
             Key::Char(c) => {
-                self.document.insert(&self.cursor_position, c);
-                self.move_cursor(Key::Right);
+                if let Some(new_position) = self.document.insert(&self.cursor_position, c) {
+                    self.cursor_position = new_position;
+                } else {
+                    self.move_cursor(Key::Right);
+                };
             }
             Key::Delete => self.document.delete(&self.cursor_position),
             Key::Backspace => {

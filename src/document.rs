@@ -39,13 +39,17 @@ impl Document {
     pub fn len(&self) -> usize {
         self.rows.len()
     }
-    pub fn insert(&mut self, at: &Position, c: char) {
+    pub fn insert(&mut self, at: &Position, c: char) -> Option<Position> {
         if at.y > self.rows.len() {
-            return;
+            return None;
         }
         self.dirty = true;
         if c == '\n' {
-            self.insert_newline(at);
+            let new_pos = self.insert_newline(at);
+            return Some(Position {
+                y: at.y.saturating_add(1),
+                x: new_pos,
+            });
         } else if at.y == self.rows.len() {
             let mut row = Row::default();
             row.insert(0, c);
@@ -56,6 +60,7 @@ impl Document {
             row.insert(at.x, c);
         }
         self.unhighlight_rows(at.y);
+        None
     }
     fn unhighlight_rows(&mut self, start: usize) {
         let start = start.saturating_sub(1);
@@ -93,19 +98,20 @@ impl Document {
         }
         Ok(())
     }
-    fn insert_newline(&mut self, at: &Position) {
+    fn insert_newline(&mut self, at: &Position) -> usize {
         if at.y > self.rows.len() {
-            return;
+            return at.x;
         }
         if at.y == self.rows.len() {
             self.rows.push(Row::default());
-            return;
+            return at.x;
         }
         #[allow(clippy::indexing_slicing)]
         let current_row = &mut self.rows[at.y];
-        let new_row = current_row.split(at.x);
+        let (new_row, x) = current_row.split(at.x);
         #[allow(clippy::integer_arithmetic)]
         self.rows.insert(at.y + 1, new_row);
+        return x;
     }
     pub fn is_dirty(&self) -> bool {
         self.dirty

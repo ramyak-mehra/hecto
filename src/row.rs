@@ -18,7 +18,7 @@ impl From<&str> for Row {
         Self {
             string: String::from(slice),
             highlighting: Vec::new(),
-            is_highlighted : false,
+            is_highlighted: false,
             len: slice.graphemes(true).count(),
         }
     }
@@ -105,30 +105,45 @@ impl Row {
         self.string = format!("{}{}", self.string, new.string);
         self.len += new.len;
     }
-    pub fn split(&mut self, at: usize) -> Self {
+    pub fn split(&mut self, at: usize) -> (Self, usize) {
         let mut row: String = String::new();
         let mut length = 0;
         let mut splitted_row: String = String::new();
         let mut splitted_length = 0;
+        let mut counting_spaces = true;
+        let mut spaces_count = 0;
+        // let spaces = " ".repeat(at);
+        // splitted_row.push_str(&spaces);
         for (index, grapheme) in self.string[..].graphemes(true).enumerate() {
             if index < at {
                 length += 1;
                 row.push_str(grapheme);
+                if counting_spaces {
+                    if grapheme == " " {
+                        spaces_count += 1;
+                        splitted_length += 1;
+                        splitted_row.push_str(" ");
+                    } else {
+                        counting_spaces = false;
+                    }
+                }
             } else {
                 splitted_length += 1;
                 splitted_row.push_str(grapheme);
             }
         }
-
         self.string = row;
         self.len = length;
         self.is_highlighted = false;
-        Self {
-            is_highlighted:false,
-            string: splitted_row,
-            len: splitted_length,
-            highlighting: Vec::new(),
-        }
+        (
+            Self {
+                is_highlighted: false,
+                string: splitted_row,
+                len: splitted_length,
+                highlighting: Vec::new(),
+            },
+            spaces_count,
+        )
     }
     pub fn as_bytes(&self) -> &[u8] {
         self.string.as_bytes()
