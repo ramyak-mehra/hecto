@@ -16,7 +16,6 @@ impl Document {
     pub fn open(filename: &str) -> Result<Self, std::io::Error> {
         let contents = fs::read_to_string(filename)?;
         let file_type = FileType::from(filename);
-        let mut start_with_comment = false;
         let mut rows = Vec::new();
         for value in contents.lines() {
             rows.push(Row::from(value));
