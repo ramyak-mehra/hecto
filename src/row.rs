@@ -40,13 +40,12 @@ impl Row {
                     .highlighting
                     .get(index)
                     .unwrap_or(&highlighting::Type::None);
-                if current_highlighting != highlighting_type {
+                if highlighting_type != current_highlighting {
                     current_highlighting = highlighting_type;
                     let start_highlight =
                         format!("{}", termion::color::Fg(highlighting_type.to_color()));
                     result.push_str(&start_highlight[..]);
                 }
-
                 if c == '\t' {
                     result.push_str(" ");
                 } else {
@@ -68,21 +67,21 @@ impl Row {
     pub fn insert(&mut self, at: usize, c: char) {
         if at >= self.len() {
             self.string.push(c);
-            self.len = 1;
-        } else {
-            let mut result: String = String::new();
-            let mut length = 0;
-            for (index, grapheme) in self.string[..].graphemes(true).enumerate() {
-                length = 1;
-                if index == at {
-                    length = 1;
-                    result.push(c);
-                }
-                result.push_str(grapheme);
-            }
-            self.len = length;
-            self.string = result;
+            self.len += 1;
+            return;
         }
+        let mut result: String = String::new();
+        let mut length = 0;
+        for (index, grapheme) in self.string[..].graphemes(true).enumerate() {
+            length += 1;
+            if index == at {
+                length += 1;
+                result.push(c);
+            }
+            result.push_str(grapheme);
+        }
+        self.len = length;
+        self.string = result;
     }
     #[allow(clippy::integer_arithmetic)]
     pub fn delete(&mut self, at: usize) {
