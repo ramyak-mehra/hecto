@@ -19,10 +19,7 @@ impl Document {
         let mut start_with_comment = false;
         let mut rows = Vec::new();
         for value in contents.lines() {
-            let mut row = Row::from(value);
-            start_with_comment =
-                row.highlight(&file_type.highlighting_options(), None, start_with_comment);
-            rows.push(row);
+            rows.push(Row::from(value));
         }
         Ok(Self {
             rows,
@@ -59,8 +56,15 @@ impl Document {
             let row = &mut self.rows[at.y];
             row.insert(at.x, c);
         }
-        self.highlight(None);
+        self.unhighlight_rows(at.y);
     }
+    fn unhighlight_rows(&mut self, start: usize) {
+        let start = start.saturating_sub(1);
+        for row in self.rows.iter_mut().skip(start) {
+            row.is_highlighted = false;
+        }
+    }
+
     #[allow(clippy::integer_arithmetic, clippy::indexing_slicing)]
     pub fn delete(&mut self, at: &Position) {
         let len = self.rows.len();
@@ -76,21 +80,15 @@ impl Document {
             let row = &mut self.rows[at.y];
             row.delete(at.x);
         }
-        self.highlight(None);
+        self.unhighlight_rows(at.y);
     }
     pub fn save(&mut self) -> Result<(), Error> {
         if let Some(file_name) = &self.file_name {
             self.file_type = FileType::from(file_name);
             let mut file = fs::File::create(file_name)?;
-            let mut start_with_comment = false;
             for row in &mut self.rows {
                 file.write(row.as_bytes())?;
                 file.write_all(b"\n")?;
-                start_with_comment = row.highlight(
-                    &self.file_type.highlighting_options(),
-                    None,
-                    start_with_comment,
-                );
             }
             self.dirty = false;
         }
@@ -106,9 +104,7 @@ impl Document {
         }
         #[allow(clippy::indexing_slicing)]
         let current_row = &mut self.rows[at.y];
-        let mut new_row = current_row.split(at.x);
-        current_row.highlight(&self.file_type.highlighting_options(), None, false);
-        new_row.highlight(&self.file_type.highlighting_options(), None, false);
+        let new_row = current_row.split(at.x);
         #[allow(clippy::integer_arithmetic)]
         self.rows.insert(at.y + 1, new_row);
     }
@@ -150,10 +146,20 @@ impl Document {
         }
         None
     }
-    pub fn highlight(&mut self, word: Option<&str>) {
+    pub fn highlight(&mut self, word: &Option<String>, until: Option<usize>) {
         let mut start_with_comment = false;
 
-        for row in &mut self.rows {
+        let until = if let Some(until) = until {
+            if until.saturating_add(1) < self.rows.len() {
+                until.saturating_add(1)
+            } else {
+                self.rows.len()
+            }
+        } else {
+            self.rows.len()
+        };
+        #[allow(clippy::indexing_slicing)]
+        for row in &mut self.rows[..until] {
             start_with_comment = row.highlight(
                 &self.file_type.highlighting_options(),
                 word,

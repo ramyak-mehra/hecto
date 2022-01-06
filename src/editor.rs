@@ -37,6 +37,7 @@ pub struct Editor {
     offset: Position,
     status_message: StatusMessage,
     quit_times: u8,
+    highlighted_word: Option<String>,
 }
 #[derive(Default, Clone)]
 
@@ -62,6 +63,7 @@ impl Editor {
         } else {
             Document::default()
         };
+
         Self {
             should_quit: false,
             terminal: Terminal::default().expect("Failed to initialize terminal"),
@@ -70,6 +72,7 @@ impl Editor {
             offset: Position::default(),
             status_message: StatusMessage::from(initial_status),
             quit_times: QUIT_TIMES,
+            highlighted_word: None,
         }
     }
     pub fn run(&mut self) {
@@ -128,8 +131,8 @@ impl Editor {
                     } else if moved {
                         editor.move_cursor(Key::Left);
                     }
-                    editor.document.highlight(Some(query));
-                },
+                    editor.highlighted_word = Some(query.to_string());
+                    },
             )
             .unwrap_or(None);
 
@@ -137,7 +140,7 @@ impl Editor {
             self.cursor_position = old_position;
             self.scroll();
         }
-        self.document.highlight(None);
+        self.highlighted_word = None;
     }
     fn process_keypress(&mut self) -> Result<(), std::io::Error> {
         let pressed_key = Terminal::read_key()?;
@@ -145,13 +148,12 @@ impl Editor {
             Key::Ctrl('q') => {
                 if self.quit_times > 0 && self.document.is_dirty() {
                     self.status_message = StatusMessage::from(format!(
-                        "WARNING! File has unsaved changes. Press Ctrl-Q {} more times",
+                        "WARNING! File has unsaved changes. Press Ctrl-Q {} more times to quit.",
                         self.quit_times
                     ));
                     self.quit_times -= 1;
                     return Ok(());
                 }
-
                 self.should_quit = true
             }
             Key::Ctrl('s') => self.save(),
@@ -160,9 +162,7 @@ impl Editor {
                 self.document.insert(&self.cursor_position, c);
                 self.move_cursor(Key::Right);
             }
-            Key::Delete => {
-                self.document.delete(&self.cursor_position);
-            }
+            Key::Delete => self.document.delete(&self.cursor_position),
             Key::Backspace => {
                 if self.cursor_position.x > 0 || self.cursor_position.y > 0 {
                     self.move_cursor(Key::Left);
@@ -187,13 +187,22 @@ impl Editor {
         Ok(())
     }
 
-    fn refresh_screen(&self) -> Result<(), std::io::Error> {
+    fn refresh_screen(&mut self) -> Result<(), std::io::Error> {
         Terminal::cursor_hide();
         Terminal::cursor_position(&Position::default());
         if self.should_quit {
             Terminal::clear_screen();
-            println!("Goodbye. \r")
+            println!("Goodbye.\r");
         } else {
+            self.document.highlight(
+                &self.highlighted_word,
+                Some(
+                    self.offset
+                        .y
+                        .saturating_add(self.terminal.size().height as usize),
+                ),
+            );
+
             self.draw_rows();
             self.draw_status_bar();
             self.draw_message_bar();
@@ -206,11 +215,11 @@ impl Editor {
         Terminal::flush()
     }
     pub fn draw_row(&self, row: &Row) {
-        let start = self.offset.x;
         let width = self.terminal.size().width as usize;
+        let start = self.offset.x;
         let end = self.offset.x.saturating_add(width);
         let row = row.render(start, end);
-        println!("{}\r", row);
+        println!("{}\r", row)
     }
     #[allow(clippy::integer_division, clippy::integer_arithmetic)]
     fn draw_rows(&self) {
@@ -225,7 +234,7 @@ impl Editor {
             } else if self.document.is_empty() && terminal_row == height / 3 {
                 self.draw_welcome_message();
             } else {
-                println!("~\r")
+                println!("~\r");
             }
         }
     }
@@ -259,10 +268,9 @@ impl Editor {
             offset.x = x.saturating_sub(width).saturating_add(1);
         }
     }
-
     fn move_cursor(&mut self, key: Key) {
         let terminal_height = self.terminal.size().height as usize;
-        let Position { mut x, mut y } = self.cursor_position;
+        let Position { mut y, mut x } = self.cursor_position;
         let height = self.document.len();
         let mut width = if let Some(row) = self.document.row(y) {
             row.len()
@@ -282,15 +290,15 @@ impl Editor {
                 } else if y > 0 {
                     y -= 1;
                     if let Some(row) = self.document.row(y) {
-                        x = row.len()
+                        x = row.len();
                     } else {
-                        x = 0
+                        x = 0;
                     }
                 }
             }
             Key::Right => {
                 if x < width {
-                    x += 1
+                    x += 1;
                 } else if y < height {
                     y += 1;
                     x = 0;
@@ -322,6 +330,7 @@ impl Editor {
         if x > width {
             x = width;
         }
+
         self.cursor_position = Position { x, y }
     }
     fn draw_status_bar(&self) {
