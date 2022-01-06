@@ -49,9 +49,10 @@ impl Editor {
     pub fn default() -> Self {
         let args: Vec<String> = env::args().collect();
         let mut initial_status =
-            String::from("HELP: Ctrl-F = find | Ctrl-S = save |  Ctrl-Q = quit");
+            String::from("HELP: Ctrl-F = find | Ctrl-S = save | Ctrl-Q = quit");
+
         let document = if let Some(file_name) = args.get(1) {
-            let doc = Document::open(&file_name);
+            let doc = Document::open(file_name);
             if let Ok(doc) = doc {
                 doc
             } else {
@@ -63,9 +64,9 @@ impl Editor {
         };
         Self {
             should_quit: false,
-            terminal: Terminal::default().expect("Failed to initialze terminal"),
+            terminal: Terminal::default().expect("Failed to initialize terminal"),
+            document,
             cursor_position: Position::default(),
-            document: document,
             offset: Position::default(),
             status_message: StatusMessage::from(initial_status),
             quit_times: QUIT_TIMES,
@@ -127,6 +128,7 @@ impl Editor {
                     } else if moved {
                         editor.move_cursor(Key::Left);
                     }
+                    editor.document.highlight(Some(query));
                 },
             )
             .unwrap_or(None);
@@ -135,6 +137,7 @@ impl Editor {
             self.cursor_position = old_position;
             self.scroll();
         }
+        self.document.highlight(None);
     }
     fn process_keypress(&mut self) -> Result<(), std::io::Error> {
         let pressed_key = Terminal::read_key()?;
@@ -341,7 +344,8 @@ impl Editor {
             modified_indicator
         );
         let line_indicator = format!(
-            "{}/{}",
+            "{} | {}/{}",
+            self.document.file_type(),
             self.cursor_position.y.saturating_add(1),
             self.document.len()
         );
