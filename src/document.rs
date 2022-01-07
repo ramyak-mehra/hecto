@@ -10,6 +10,7 @@ pub struct Document {
     pub file_name: Option<String>,
     dirty: bool,
     file_type: FileType,
+    pub last_cursor_position : Position,
 }
 
 impl Document {
@@ -25,6 +26,7 @@ impl Document {
             file_name: Some(filename.to_string()),
             dirty: false,
             file_type,
+            last_cursor_position : Position::default()
         })
     }
     pub fn file_type(&self) -> String {

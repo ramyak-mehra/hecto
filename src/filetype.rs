@@ -3,6 +3,7 @@ pub struct FileType {
     name: String,
     hl_opts: HighlightingOptions,
 }
+
 #[derive(Default)]
 pub struct HighlightingOptions {
     numbers: bool,

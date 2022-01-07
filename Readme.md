@@ -3,4 +3,4 @@
 ## Additional Features(not in the series)
 * [ ] Switch between different modes
 * [ ] Copy paste support
-* [ ] Ability to open multiple files at once and switch between them.
+* [x] Ability to open multiple files at once and switch between them.

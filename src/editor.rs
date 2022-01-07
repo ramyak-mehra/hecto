@@ -33,13 +33,14 @@ pub struct Editor {
     should_quit: bool,
     terminal: Terminal,
     cursor_position: Position,
-    document: Document,
+    current_document: usize,
+    documents: Vec<Document>,
     offset: Position,
     status_message: StatusMessage,
     quit_times: u8,
     highlighted_word: Option<String>,
 }
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Copy)]
 
 pub struct Position {
     pub x: usize,
@@ -50,7 +51,7 @@ impl Editor {
     pub fn default() -> Self {
         let args: Vec<String> = env::args().collect();
         let mut initial_status =
-            String::from("HELP: Ctrl-F = find | Ctrl-S = save | Ctrl-Q = quit");
+            String::from("HELP: Ctrl-F = find | Ctrl-S = save | Ctrl-Q = quit | Ctrl-n = open another file | Alt-l/r = switch between files");
 
         let document = if let Some(file_name) = args.get(1) {
             let doc = Document::open(file_name);
@@ -63,16 +64,18 @@ impl Editor {
         } else {
             Document::default()
         };
-
+        let mut documents = Vec::new();
+        documents.push(document);
         Self {
             should_quit: false,
             terminal: Terminal::default().expect("Failed to initialize terminal"),
-            document,
+            current_document: 0,
             cursor_position: Position::default(),
             offset: Position::default(),
             status_message: StatusMessage::from(initial_status),
             quit_times: QUIT_TIMES,
             highlighted_word: None,
+            documents: documents,
         }
     }
     pub fn run(&mut self) {
@@ -89,16 +92,16 @@ impl Editor {
         }
     }
     fn save(&mut self) {
-        if self.document.file_name.is_none() {
+        if self.documents[self.current_document].file_name.is_none() {
             let new_name = self.prompt("Save as: ", |_, _, _| {}).unwrap_or(None);
             if new_name.is_none() {
                 self.status_message = StatusMessage::from("Save aborter".to_string());
                 return;
             }
-            self.document.file_name = new_name;
+            self.documents[self.current_document].file_name = new_name;
         }
 
-        if self.document.save().is_ok() {
+        if self.documents[self.current_document].save().is_ok() {
             self.status_message = StatusMessage::from("File saved successfully".to_string());
         } else {
             self.status_message = StatusMessage::from("Error writing file!".to_string());
@@ -121,11 +124,11 @@ impl Editor {
                         Key::Left | Key::Up => direction = SearchDirection::Backward,
                         _ => direction = SearchDirection::Forward,
                     }
-                    if let Some(position) =
-                        editor
-                            .document
-                            .find(&query, &editor.cursor_position, direction)
-                    {
+                    if let Some(position) = editor.documents[editor.current_document].find(
+                        &query,
+                        &editor.cursor_position,
+                        direction,
+                    ) {
                         editor.cursor_position = position;
                         editor.scroll();
                     } else if moved {
@@ -146,30 +149,38 @@ impl Editor {
         let pressed_key = Terminal::read_key()?;
         match pressed_key {
             Key::Ctrl('q') => {
-                if self.quit_times > 0 && self.document.is_dirty() {
-                    self.status_message = StatusMessage::from(format!(
-                        "WARNING! File has unsaved changes. Press Ctrl-Q {} more times to quit.",
-                        self.quit_times
-                    ));
-                    self.quit_times -= 1;
-                    return Ok(());
+                for document in self.documents.iter() {
+                    if self.quit_times > 0 && document.is_dirty() {
+                        self.status_message = StatusMessage::from(format!(
+                            "WARNING! File has unsaved changes. Press Ctrl-Q {} more times to quit.",
+                            self.quit_times
+                        ));
+                        self.quit_times -= 1;
+                        return Ok(());
+                    }
                 }
+
                 self.should_quit = true
             }
+            Key::Ctrl('n') => self.open_file(),
+            Key::Alt('l') => self.change_document(self.current_document.saturating_sub(1)),
+            Key::Alt('r') => self.change_document(self.current_document.saturating_add(1)),
             Key::Ctrl('s') => self.save(),
             Key::Ctrl('f') => self.search(),
             Key::Char(c) => {
-                if let Some(new_position) = self.document.insert(&self.cursor_position, c) {
+                if let Some(new_position) =
+                    self.documents[self.current_document].insert(&self.cursor_position, c)
+                {
                     self.cursor_position = new_position;
                 } else {
                     self.move_cursor(Key::Right);
                 };
             }
-            Key::Delete => self.document.delete(&self.cursor_position),
+            Key::Delete => self.documents[self.current_document].delete(&self.cursor_position),
             Key::Backspace => {
                 if self.cursor_position.x > 0 || self.cursor_position.y > 0 {
                     self.move_cursor(Key::Left);
-                    self.document.delete(&self.cursor_position);
+                    self.documents[self.current_document].delete(&self.cursor_position);
                 }
             }
             Key::Up
@@ -197,7 +208,7 @@ impl Editor {
             Terminal::clear_screen();
             println!("Goodbye.\r");
         } else {
-            self.document.highlight(
+            self.documents[self.current_document].highlight(
                 &self.highlighted_word,
                 Some(
                     self.offset
@@ -229,12 +240,12 @@ impl Editor {
         let height = self.terminal.size().height;
         for terminal_row in 0..height {
             Terminal::clear_current_line();
-            if let Some(row) = self
-                .document
+            if let Some(row) = self.documents[self.current_document]
                 .row(self.offset.y.saturating_add(terminal_row as usize))
             {
                 self.draw_row(row);
-            } else if self.document.is_empty() && terminal_row == height / 3 {
+            } else if self.documents[self.current_document].is_empty() && terminal_row == height / 3
+            {
                 self.draw_welcome_message();
             } else {
                 println!("~\r");
@@ -274,8 +285,8 @@ impl Editor {
     fn move_cursor(&mut self, key: Key) {
         let terminal_height = self.terminal.size().height as usize;
         let Position { mut y, mut x } = self.cursor_position;
-        let height = self.document.len();
-        let mut width = if let Some(row) = self.document.row(y) {
+        let height = self.documents[self.current_document].len();
+        let mut width = if let Some(row) = self.documents[self.current_document].row(y) {
             row.len()
         } else {
             0
@@ -292,7 +303,7 @@ impl Editor {
                     x -= 1;
                 } else if y > 0 {
                     y -= 1;
-                    if let Some(row) = self.document.row(y) {
+                    if let Some(row) = self.documents[self.current_document].row(y) {
                         x = row.len();
                     } else {
                         x = 0;
@@ -325,7 +336,7 @@ impl Editor {
             Key::End => x = width,
             _ => (),
         }
-        width = if let Some(row) = self.document.row(y) {
+        width = if let Some(row) = self.documents[self.current_document].row(y) {
             row.len()
         } else {
             0
@@ -339,27 +350,27 @@ impl Editor {
     fn draw_status_bar(&self) {
         let mut status: String;
         let width = self.terminal.size().width as usize;
-        let modified_indicator = if self.document.is_dirty() {
+        let modified_indicator = if self.documents[self.current_document].is_dirty() {
             " (modified)"
         } else {
             ""
         };
         let mut file_name = "[No Name]".to_string();
-        if let Some(name) = &self.document.file_name {
+        if let Some(name) = &self.documents[self.current_document].file_name {
             file_name = name.clone();
             file_name.truncate(20);
         }
         status = format!(
             "{} - {} lines{}",
             file_name,
-            self.document.len(),
+            self.documents[self.current_document].len(),
             modified_indicator
         );
         let line_indicator = format!(
             "{} | {}/{}",
-            self.document.file_type(),
+            self.documents[self.current_document].file_type(),
             self.cursor_position.y.saturating_add(1),
-            self.document.len()
+            self.documents[self.current_document].len()
         );
         let len = line_indicator.len() + status.len();
         if width > len {
@@ -416,6 +427,37 @@ impl Editor {
             return Ok(None);
         }
         Ok(Some(result))
+    }
+    fn change_document(&mut self, index: usize) {
+        self.documents[self.current_document].last_cursor_position = self.cursor_position;
+        self.current_document = index % self.documents.len();
+        self.cursor_position = self.documents[self.current_document].last_cursor_position;
+    }
+    fn open_file(&mut self) {
+        if self.documents[self.current_document].file_name.is_none() {
+            let new_name = self.prompt("Save as: ", |_, _, _| {}).unwrap_or(None);
+            if new_name.is_none() {
+                self.status_message = StatusMessage::from("Save aborted".to_string());
+                return;
+            }
+            self.documents[self.current_document].file_name = new_name;
+        }
+
+        let new_fle = self.prompt("Open File: ", |_, _, _| {}).unwrap_or(None);
+        let document = if let Some(file_name) = new_fle {
+            let doc = Document::open(&file_name);
+            if let Ok(doc) = doc {
+                doc
+            } else {
+                self.status_message =
+                    StatusMessage::from(format!("ERR: Could not open file: {}", file_name));
+                Document::default()
+            }
+        } else {
+            Document::default()
+        };
+        self.documents.push(document);
+        self.change_document(self.documents.len() - 1);
     }
 }
 
